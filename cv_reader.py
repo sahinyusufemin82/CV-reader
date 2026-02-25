@@ -1,80 +1,89 @@
 import google.generativeai as genai
 import json
 
-# 1. API Anahtarını Tanımla 
-# (Google AI Studio'dan ücretsiz bir API key alıp buraya yapıştırmalısın)
-API_KEY = "SENIN_API_ANAHTARIN_BURAYA_GELECEK"
-genai.configure(api_key=API_KEY)
+# API anahtarını tanımladığını varsayıyoruz (Önceki adımdaki gibi)
+# genai.configure(api_key="API_ANAHTARIN")
 
-def cv_analiz_llm(cv_metni):
+def cv_ilan_eslestir(cv_verisi_json, is_ilani_metni):
     """
-    CV metnini LLM'e gönderir ve yapılandırılmış JSON verisi olarak geri alır.
+    Çıkarılan CV verisi ile İş İlanını karşılaştırıp detaylı bir uygunluk puanı üretir.
     """
-    # Hızlı ve veri analizi için çok iyi olan flash modelini seçiyoruz
     model = genai.GenerativeModel('gemini-1.5-flash')
     
-    # Sistemin beyni: PROMPT (Komut)
     prompt = f"""
-    Sen uzman bir İnsan Kaynakları asistanısın. Aşağıda bir adayın CV'sinden çıkarılmış ham metin bulunuyor. 
-    Lütfen bu metni analiz et ve KESİNLİKLE sadece aşağıdaki JSON formatında çıktı ver. Başka hiçbir açıklama metni ekleme.
-    Eğer bir bilgi CV'de yoksa 'null' veya boş liste '[]' bırak.
+    Sen kıdemli bir İşe Alım (Talent Acquisition) Uzmanısın. 
+    Aşağıda bir adayın analiz edilmiş CV verileri (JSON formatında) ve açık bir pozisyonun iş ilanı (Job Description) metni bulunuyor.
     
-    Beklenen JSON Formatı:
+    Görevin: Adayın bu role ne kadar uygun olduğunu analiz edip 0 ile 100 arasında genel bir "uygunluk_skoru" belirlemek. 
+    Analiz yaparken deneyim yıllarını, eğitim seviyesini ve özellikle teknik yetenekleri göz önünde bulundur. Benzer teknolojileri eşdeğer veya yakın kabul edebilirsin (Örn: İlan AWS istiyorsa, adayda GCP varsa kısmi puan ver).
+    
+    Lütfen KESİNLİKLE ve SADECE aşağıdaki JSON formatında çıktı ver:
+    
     {{
-        "kisisel_bilgiler": {{
-            "ad_soyad": "",
-            "eposta": "",
-            "telefon": ""
-        }},
-        "ozet_bilgiler": {{
-            "toplam_deneyim_yili": 0,  # Sadece sayı
-            "son_unvan": "",
-            "egitim_seviyesi": "" # Örn: Lisans, Yüksek Lisans
-        }},
-        "teknik_yetenekler": [],
-        "sosyal_yetenekler": []
+        "uygunluk_skoru": 0,
+        "eslesen_kriterler": ["kriter 1", "kriter 2"],
+        "eksik_veya_zayif_yonler": ["eksik 1", "eksik 2"],
+        "ik_uzmanina_not": "Adayın profili hakkında 2-3 cümlelik kısa ve net bir değerlendirme özeti."
     }}
 
-    CV Ham Metni:
-    -----------------
-    {cv_metni}
-    -----------------
+    --- ADAYIN CV VERİSİ ---
+    {json.dumps(cv_verisi_json, ensure_ascii=False)}
+    
+    --- İŞ İLANI METNİ ---
+    {is_ilani_metni}
     """
     
-    print("Yapay Zeka CV'yi analiz ediyor, lütfen bekleyin...")
+    print("Aday iş ilanı ile eşleştiriliyor, puan hesaplanıyor...")
     
     try:
-        # LLM'e isteği gönder
         response = model.generate_content(prompt)
-        sonuc_metni = response.text
+        sonuc_metni = response.text.replace("```json", "").replace("```", "").strip()
         
-        # LLM bazen JSON kod bloğu markdown'ı (```json ... ```) ile yanıt verebilir, onu temizleyelim
-        sonuc_metni = sonuc_metni.replace("```json", "").replace("```", "").strip()
-        
-        # Metni Python Sözlüğüne (Dictionary) çevir
-        analiz_sonucu = json.loads(sonuc_metni)
-        return analiz_sonucu
+        eslestirme_sonucu = json.loads(sonuc_metni)
+        return eslestirme_sonucu
         
     except Exception as e:
-        return {"hata": f"Analiz sırasında bir hata oluştu: {e}"}
+        return {"hata": f"Eşleştirme sırasında bir hata oluştu: {e}"}
 
 # === SİSTEMİ TEST EDELİM ===
 if __name__ == "__main__":
-    # Örnek bir CV metni (Gerçek senaryoda bu PDF'ten gelecek)
-    ornek_cv_metni = """
-    Adım Ahmet Yılmaz. 1995 İstanbul doğumluyum. 
-    ahmet.yilmaz@email.com adresinden veya 555-1234567 numarasından bana ulaşabilirsiniz.
-    Boğaziçi Üniversitesi Bilgisayar Mühendisliği bölümünden 2018'de mezun oldum (Lisans).
-    Kariyerime Trendyol'da Backend Developer olarak başladım ve 3 yıl çalıştım. 
-    Ardından Getir'de Senior Backend Developer olarak 2 yıl daha görev yaptım.
-    Python, Django, PostgreSQL, Docker, AWS ve Kubernetes teknolojilerine çok iyi derecede hakimim.
-    Ayrıca takım çalışmasına yatkınım ve çevik (agile) yöntemlerle proje yönetimi konusunda tecrübeliyim.
+    
+    # 1. Önceki adımdan gelen sahte CV verimiz (Sistemin çıkardığı JSON)
+    aday_cv = {
+        "kisisel_bilgiler": {
+            "ad_soyad": "Ahmet Yılmaz"
+        },
+        "ozet_bilgiler": {
+            "toplam_deneyim_yili": 5,
+            "son_unvan": "Senior Backend Developer",
+            "egitim_seviyesi": "Lisans"
+        },
+        "teknik_yetenekler": ["Python", "Django", "PostgreSQL", "Docker", "AWS", "Kubernetes"],
+        "sosyal_yetenekler": ["Takım çalışması", "Çevik proje yönetimi (Agile)"]
+    }
+    
+    # 2. İK departmanının girdiği İş İlanı Metni
+    ornek_is_ilani = """
+    Şirketimize Senior Software Engineer arıyoruz.
+    - En az 4 yıl backend geliştirme tecrübesi,
+    - Python ve FastAPI veya Flask konusunda uzman (Django da kabul edilebilir),
+    - Microservis mimarisi ve Docker/Kubernetes tecrübesi,
+    - Bulut sistemleri (Tercihen Google Cloud - GCP) kullanmış,
+    - NoSQL (MongoDB vb.) veritabanlarına aşina olmak artı puandır.
     """
     
-    # LLM Analizini Çalıştır
-    # NOT: Kodu çalıştırmadan önce geçerli bir API KEY girmeyi unutma!
-    sonuc = cv_analiz_llm(ornek_cv_metni)
+    # Analizi çalıştır
+    eslestirme_raporu = cv_ilan_eslestir(aday_cv, ornek_is_ilani)
     
-    # Çıktıyı güzel ve okunabilir formatta yazdır
-    print("\n--- YAPAY ZEKA ANALİZ SONUCU ---")
-    print(json.dumps(sonuc, indent=4, ensure_ascii=False))
+    # Sonucu ekrana yazdır
+    print("\n=== ADAY DEĞERLENDİRME RAPORU ===")
+    print(f"Uygunluk Skoru: % {eslestirme_raporu.get('uygunluk_skoru', 'Hesaplanamadı')}")
+    print("\n✅ Eşleşen Kriterler:")
+    for kriter in eslestirme_raporu.get('eslesen_kriterler', []):
+        print(f"  - {kriter}")
+        
+    print("\n⚠️ Eksik veya Zayıf Yönler:")
+    for eksik in eslestirme_raporu.get('eksik_veya_zayif_yonler', []):
+        print(f"  - {eksik}")
+        
+    print(f"\n💡 İK Uzmanına Not:\n{eslestirme_raporu.get('ik_uzmanina_not', '')}")
