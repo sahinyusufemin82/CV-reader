@@ -1,89 +1,131 @@
+import pdfplumber
 import google.generativeai as genai
 import json
+import os
 
-# API anahtarını tanımladığını varsayıyoruz (Önceki adımdaki gibi)
-# genai.configure(api_key="API_ANAHTARIN")
+# ==========================================
+# 1. AYARLAR VE API KONFİGÜRASYONU
+# ==========================================
+API_KEY = "SENIN_API_ANAHTARIN_BURAYA_GELECEK"
+genai.configure(api_key=API_KEY)
+MODEL_ADI = 'gemini-1.5-flash'
 
-def cv_ilan_eslestir(cv_verisi_json, is_ilani_metni):
-    """
-    Çıkarılan CV verisi ile İş İlanını karşılaştırıp detaylı bir uygunluk puanı üretir.
-    """
-    model = genai.GenerativeModel('gemini-1.5-flash')
+# ==========================================
+# 2. TEMEL FONKSİYONLAR
+# ==========================================
+
+def pdf_metin_cikar(pdf_yolu):
+    """PDF'i okur ve metne çevirir."""
+    print(f"📄 '{pdf_yolu}' okunuyor...")
+    tam_metin = ""
+    try:
+        with pdfplumber.open(pdf_yolu) as pdf:
+            for sayfa in pdf.pages:
+                metin = sayfa.extract_text()
+                if metin:
+                    tam_metin += metin + "\n"
+        return tam_metin
+    except Exception as e:
+        print(f"❌ PDF Okuma Hatası: {e}")
+        return None
+
+def cv_yapilandir(cv_metni):
+    """Ham metni LLM ile yapılandırılmış JSON verisine dönüştürür."""
+    print("🧠 CV metni yapay zeka ile analiz ediliyor...")
+    model = genai.GenerativeModel(MODEL_ADI)
     
     prompt = f"""
-    Sen kıdemli bir İşe Alım (Talent Acquisition) Uzmanısın. 
-    Aşağıda bir adayın analiz edilmiş CV verileri (JSON formatında) ve açık bir pozisyonun iş ilanı (Job Description) metni bulunuyor.
-    
-    Görevin: Adayın bu role ne kadar uygun olduğunu analiz edip 0 ile 100 arasında genel bir "uygunluk_skoru" belirlemek. 
-    Analiz yaparken deneyim yıllarını, eğitim seviyesini ve özellikle teknik yetenekleri göz önünde bulundur. Benzer teknolojileri eşdeğer veya yakın kabul edebilirsin (Örn: İlan AWS istiyorsa, adayda GCP varsa kısmi puan ver).
-    
-    Lütfen KESİNLİKLE ve SADECE aşağıdaki JSON formatında çıktı ver:
-    
+    Aşağıdaki CV metnini analiz et ve sadece JSON formatında çıktı ver. Başka metin ekleme.
+    Format:
     {{
-        "uygunluk_skoru": 0,
-        "eslesen_kriterler": ["kriter 1", "kriter 2"],
-        "eksik_veya_zayif_yonler": ["eksik 1", "eksik 2"],
-        "ik_uzmanina_not": "Adayın profili hakkında 2-3 cümlelik kısa ve net bir değerlendirme özeti."
+        "kisisel_bilgiler": {{"ad_soyad": "", "eposta": "", "telefon": ""}},
+        "ozet_bilgiler": {{"toplam_deneyim_yili": 0, "son_unvan": "", "egitim_seviyesi": ""}},
+        "teknik_yetenekler": [],
+        "sosyal_yetenekler": []
     }}
-
-    --- ADAYIN CV VERİSİ ---
-    {json.dumps(cv_verisi_json, ensure_ascii=False)}
-    
-    --- İŞ İLANI METNİ ---
-    {is_ilani_metni}
+    CV Metni: {cv_metni}
     """
-    
-    print("Aday iş ilanı ile eşleştiriliyor, puan hesaplanıyor...")
-    
     try:
         response = model.generate_content(prompt)
-        sonuc_metni = response.text.replace("```json", "").replace("```", "").strip()
-        
-        eslestirme_sonucu = json.loads(sonuc_metni)
-        return eslestirme_sonucu
-        
+        sonuc = response.text.replace("```json", "").replace("```", "").strip()
+        return json.loads(sonuc)
     except Exception as e:
-        return {"hata": f"Eşleştirme sırasında bir hata oluştu: {e}"}
+        print(f"❌ Veri Çıkarma Hatası: {e}")
+        return None
 
-# === SİSTEMİ TEST EDELİM ===
+def cv_ilan_eslestir(cv_json, is_ilani_metni):
+    """CV verisi ile iş ilanını karşılaştırıp puanlar."""
+    print("⚖️ Aday iş ilanı ile eşleştiriliyor...")
+    model = genai.GenerativeModel(MODEL_ADI)
+    
+    prompt = f"""
+    Sen bir İK uzmanısın. Aşağıdaki CV JSON verisini ve İş İlanını karşılaştır.
+    Sadece JSON formatında çıktı ver.
+    Format:
+    {{
+        "uygunluk_skoru": 0,
+        "eslesen_kriterler": [],
+        "eksik_veya_zayif_yonler": [],
+        "ik_uzmanina_not": ""
+    }}
+    
+    CV Verisi: {json.dumps(cv_json, ensure_ascii=False)}
+    İş İlanı: {is_ilani_metni}
+    """
+    try:
+        response = model.generate_content(prompt)
+        sonuc = response.text.replace("```json", "").replace("```", "").strip()
+        return json.loads(sonuc)
+    except Exception as e:
+        print(f"❌ Eşleştirme Hatası: {e}")
+        return None
+
+# ==========================================
+# 3. ANA ÇALIŞMA BLOĞU (MAIN)
+# ==========================================
 if __name__ == "__main__":
+    # Test Dosyaları ve Verileri
+    pdf_dosyasi = "ornek_cv.pdf" # Kodu çalıştırdığın klasörde bu isimde bir PDF olmalı
     
-    # 1. Önceki adımdan gelen sahte CV verimiz (Sistemin çıkardığı JSON)
-    aday_cv = {
-        "kisisel_bilgiler": {
-            "ad_soyad": "Ahmet Yılmaz"
-        },
-        "ozet_bilgiler": {
-            "toplam_deneyim_yili": 5,
-            "son_unvan": "Senior Backend Developer",
-            "egitim_seviyesi": "Lisans"
-        },
-        "teknik_yetenekler": ["Python", "Django", "PostgreSQL", "Docker", "AWS", "Kubernetes"],
-        "sosyal_yetenekler": ["Takım çalışması", "Çevik proje yönetimi (Agile)"]
-    }
-    
-    # 2. İK departmanının girdiği İş İlanı Metni
-    ornek_is_ilani = """
-    Şirketimize Senior Software Engineer arıyoruz.
-    - En az 4 yıl backend geliştirme tecrübesi,
-    - Python ve FastAPI veya Flask konusunda uzman (Django da kabul edilebilir),
-    - Microservis mimarisi ve Docker/Kubernetes tecrübesi,
-    - Bulut sistemleri (Tercihen Google Cloud - GCP) kullanmış,
-    - NoSQL (MongoDB vb.) veritabanlarına aşina olmak artı puandır.
+    aranan_is_ilani = """
+    Pozisyon: Python Backend Geliştirici
+    - En az 3 yıl Python tecrübesi (Django veya FastAPI)
+    - Veritabanı tasarımı ve SQL bilgisi
+    - Docker tecrübesi
+    - İngilizce döküman okuyabilme
+    - Takım çalışmasına yatkınlık
     """
     
-    # Analizi çalıştır
-    eslestirme_raporu = cv_ilan_eslestir(aday_cv, ornek_is_ilani)
+    print("=== YAPAY ZEKA DESTEKLİ İŞE ALIM SİSTEMİ BAŞLATILDI ===\n")
     
-    # Sonucu ekrana yazdır
-    print("\n=== ADAY DEĞERLENDİRME RAPORU ===")
-    print(f"Uygunluk Skoru: % {eslestirme_raporu.get('uygunluk_skoru', 'Hesaplanamadı')}")
-    print("\n✅ Eşleşen Kriterler:")
-    for kriter in eslestirme_raporu.get('eslesen_kriterler', []):
-        print(f"  - {kriter}")
+    if not os.path.exists(pdf_dosyasi):
+        print(f"⚠️ HATA: '{pdf_dosyasi}' bulunamadı. Lütfen script ile aynı klasöre bir PDF dosyası koyun.")
+    else:
+        # 1. Adım: PDF'ten metin çıkar
+        ham_metin = pdf_metin_cikar(pdf_dosyasi)
         
-    print("\n⚠️ Eksik veya Zayıf Yönler:")
-    for eksik in eslestirme_raporu.get('eksik_veya_zayif_yonler', []):
-        print(f"  - {eksik}")
-        
-    print(f"\n💡 İK Uzmanına Not:\n{eslestirme_raporu.get('ik_uzmanina_not', '')}")
+        if ham_metin:
+            # 2. Adım: Metni JSON'a çevir
+            cv_verisi = cv_yapilandir(ham_metin)
+            
+            if cv_verisi:
+                # 3. Adım: İş ilanı ile eşleştir
+                rapor = cv_ilan_eslestir(cv_verisi, aranan_is_ilani)
+                
+                if rapor:
+                    # 4. Adım: Sonuçları konsola şık bir şekilde yazdır
+                    print("\n" + "="*40)
+                    print(f"👤 ADAY: {cv_verisi['kisisel_bilgiler'].get('ad_soyad', 'Bilinmiyor')}")
+                    print(f"🎯 UYGUNLUK SKORU: %{rapor.get('uygunluk_skoru', 0)}")
+                    print("="*40)
+                    
+                    print("\n✅ EŞLEŞEN GÜÇLÜ YÖNLER:")
+                    for k in rapor.get('eslesen_kriterler', []):
+                        print(f"  + {k}")
+                        
+                    print("\n⚠️ EKSİK/ZAYIF YÖNLER:")
+                    for e in rapor.get('eksik_veya_zayif_yonler', []):
+                        print(f"  - {e}")
+                        
+                    print(f"\n💡 İK ÖZETİ:\n{rapor.get('ik_uzmanina_not', '')}")
+                    print("="*40 + "\n")
